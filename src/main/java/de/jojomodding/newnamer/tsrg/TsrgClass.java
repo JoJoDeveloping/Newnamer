@@ -7,8 +7,10 @@ import de.jojomodding.newnamer.type.FunctionType;
 import de.jojomodding.newnamer.type.Type;
 
 import java.io.PrintStream;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 public class TsrgClass extends ClassType implements ClassRep {
@@ -26,8 +28,12 @@ public class TsrgClass extends ClassType implements ClassRep {
         this.file = file;
         this.deobfName = deobf;
         this.obfName = obf;
-        methods = new HashSet<>();
-        fields = new HashSet<>();
+        methods = new TreeSet<>((m1,m2) -> {
+            int i = m1.getNotchName().compareTo(m2.getNotchName());
+            if(i==0) return m1.getNotchianSignature().compareTo(m2.getNotchianSignature());
+            return i;
+        });
+        fields = new TreeSet<>(Comparator.comparing(TsrgField::getNotchName));
     }
 
     public String getDeobfuscatedName() {

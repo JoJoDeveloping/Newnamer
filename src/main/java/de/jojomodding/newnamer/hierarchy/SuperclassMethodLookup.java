@@ -1,5 +1,6 @@
 package de.jojomodding.newnamer.hierarchy;
 
+import de.jojomodding.newnamer.hierarchy.rep.ArrayRep;
 import de.jojomodding.newnamer.hierarchy.rep.ClassRep;
 import de.jojomodding.newnamer.hierarchy.rep.JavaClass;
 import de.jojomodding.newnamer.hierarchy.rep.MethodRep;
@@ -21,40 +22,48 @@ public class SuperclassMethodLookup {
         this.cp = cp;
     }
 
+    /**
+     * Format is Ljava/lang/String; or C or [C
+     * @param n
+     * @return
+     */
     public ClassRep lookup(String n){
         return reps.computeIfAbsent(n, $ -> {
-            TsrgClass t = renameables.getClasses().get(n);
-            if(t == null) {
-                switch (n.charAt(0)){
-                    case 'B': return new JavaClass(Byte.TYPE);
-                    case 'C': return new JavaClass(Character.TYPE);
-                    case 'D': return new JavaClass(Double.TYPE);
-                    case 'F': return new JavaClass(Float.TYPE);
-                    case 'I': return new JavaClass(Integer.TYPE);
-                    case 'J': return new JavaClass(Long.TYPE);
-                    case 'S': return new JavaClass(Short.TYPE);
-                    case 'V': return new JavaClass(Void.TYPE);
-                    case 'Z': return new JavaClass(Boolean.TYPE);
-                    case 'L':
-                        try {
-                            return new JavaClass(Class.forName(n.substring(1, n.length()-1).replace('/', '.'), false, cp));
-                        } catch (ClassNotFoundException e) {
-                            throw new RuntimeException("Could not find class "+n+" for parent lookup!", e);
-                        }
-                    case '[':
-                        try {
-                            return new JavaClass(Class.forName(n.replace('/', '.'), false, cp));
-                        } catch (ClassNotFoundException e) {
-                            throw new RuntimeException("Could not find class "+n+" for parent lookup!", e);
-                        }
-                }
+            switch (n.charAt(0)){
+                case 'B': return new JavaClass(Byte.TYPE);
+                case 'C': return new JavaClass(Character.TYPE);
+                case 'D': return new JavaClass(Double.TYPE);
+                case 'F': return new JavaClass(Float.TYPE);
+                case 'I': return new JavaClass(Integer.TYPE);
+                case 'J': return new JavaClass(Long.TYPE);
+                case 'S': return new JavaClass(Short.TYPE);
+                case 'V': return new JavaClass(Void.TYPE);
+                case 'Z': return new JavaClass(Boolean.TYPE);
+                case 'L':
+                    String subname = n.substring(1, n.length()-1);
+                    TsrgClass clazz = renameables.getClasses().get(subname);
+                    if(clazz != null) return clazz;
+                    try {
+                        return new JavaClass(Class.forName(subname.replace('/', '.'), false, cp));
+                    } catch (ClassNotFoundException e) {
+                        throw new RuntimeException("Could not find class "+n+" for parent lookup!", e);
+                    }
+                case '[':
+                    return new ArrayRep(lookup(n.substring(1)));
             }
-            return t;
+            throw new IllegalArgumentException("Invalidly formatted class name "+n);
         });
     }
 
+    /**
+     * Gets a potential parent method
+     * @param className in format java/lang/String
+     * @param methodName is the name
+     * @param methodSignature in format (I)Ljava/lang/String;
+     * @return
+     */
     public Optional<String> parentName(String className, String methodName, String methodSignature){
-        ClassRep cp = lookup(className);
+        ClassRep cp = lookup("L"+className+";");
         Optional<String> result = Optional.empty();
         if(cp.superClass() != null)
             result = walkDependencyTree(cp.superClass(), methodName, methodSignature);

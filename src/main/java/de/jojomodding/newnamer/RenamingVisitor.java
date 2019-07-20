@@ -11,16 +11,13 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.FieldVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.tree.AbstractInsnNode;
-import org.objectweb.asm.tree.ClassNode;
-import org.objectweb.asm.tree.MethodInsnNode;
-import org.objectweb.asm.tree.MethodNode;
+import org.objectweb.asm.tree.*;
 
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
 import java.net.URLClassLoader;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Set;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class RenamingVisitor extends ClassVisitor {
@@ -49,9 +46,9 @@ public class RenamingVisitor extends ClassVisitor {
                 clazz = newt.addClass(name, name);
             else
                 clazz = newt.addClass(name, "C_"+newt.nextNameOffset()+"_"+name);
-            System.out.println("Mapping new class "+name+" to "+clazz.getDeobfuscatedName());
-        }else newt.addClass(name, name);
-        clazz.supplyMoreInformation("L"+superName+";", (access&Opcodes.ACC_FINAL)!=0, interfaces == null ? Set.of() : Set.of(interfaces));
+            if(verbose)System.out.println("Mapping new class "+name+" to "+clazz.getDeobfuscatedName());
+        }else newt.addClass(name, clazz.getDeobfuscatedName());
+        clazz.supplyMoreInformation("L"+superName+";", (access&Opcodes.ACC_FINAL)!=0, interfaces == null ? Set.of() : Arrays.stream(interfaces).map(s -> "L"+s+";").collect(Collectors.toSet()));
         super.visit(version, access, name, signature, superName, interfaces);
     }
 
@@ -64,6 +61,30 @@ public class RenamingVisitor extends ClassVisitor {
     }
 
     public ClassVisitor roundTwo(ClassNode n) {
+        String enumValuesName;
+        if((n.access & Opcodes.ACC_ENUM) != 0) {
+            if (n.superName != null && n.superName.equals("java/lang/Enum")) {
+                Optional<MethodNode> mn = n.methods.stream().
+                        filter(m -> m.name.equals("values") && m.desc.equals("()[L" + n.name + ";") && (m.access & Opcodes.ACC_STATIC) != 0).
+                        findAny();
+                if (mn.isEmpty())
+                    throw new IllegalArgumentException("enum without values() method!");
+                FieldInsnNode getter = null;
+                for (AbstractInsnNode in : mn.get().instructions.toArray()) {
+                    if (in instanceof FieldInsnNode && in.getOpcode() == Opcodes.GETSTATIC)
+                        getter = (FieldInsnNode) in;
+                }
+                if (getter == null)
+                    throw new IllegalArgumentException("values() method in enum " + n.name + " does not load $VALUES field!");
+                if (getter.owner.equals(n.name) && getter.desc.equals("[L" + n.name + ";"))
+                    enumValuesName = getter.name;
+                else
+                    throw new IllegalArgumentException("values() method in enum " + n.name + " does not load $VALUES field!");
+            }else{
+                enumValuesName = null; //if you give an enum member it's own anonymous classes these classes are marked as enum yet aren't actually. you end up here.
+            }
+        }else enumValuesName = null;
+
         return new ClassVisitor(Opcodes.ASM6) {
             private TsrgClass currentClass = null, currentClassOld = null;
             Map<String, String> syntheticBridgeTargetNames = new HashMap<>();
@@ -78,22 +99,32 @@ public class RenamingVisitor extends ClassVisitor {
             @Override
             public FieldVisitor visitField(int access, String name, String descriptor, String signature, Object value) {
                 if(verbose)System.out.println("Visiting field "+name);
-                if((access & Opcodes.ACC_SYNTHETIC) == 0 && (access & Opcodes.ACC_BRIDGE) == 0) {
-                    (currentClassOld != null ?
-                        currentClassOld.getFields().stream().
-                                filter(f -> f.getNotchName().equals(name)).
-                                findAny().map(TsrgField::getSrgName) : Optional.<String>empty()).
-                            or(() -> {
-                                String s ="field_" + newt.nextNameOffset() + "_" + name;
-                                System.out.println("Found new field "+name+" in "+currentClass.getDeobfuscatedName()+", srg: "+s);
-                                return Optional.of(s);
-                            }).
-                            ifPresent(srg -> {
-                                if(verbose)
-                                    System.out.println("Renaming field "+name+" in class "+currentClass.getDeobfuscatedName()+" to "+srg);
-                                currentClass.addField(name, srg);
-                            });
+                Optional<String> newName = Optional.empty();
+                if((access & Opcodes.ACC_SYNTHETIC) != 0) {
+                    if(name.equals(enumValuesName))
+                        newName = Optional.of("$VALUES");
+
+                    if(newName.isEmpty()){
+                        if(verbose) {
+                            System.out.println("Ignoring synthetic field " + name + " in class " + currentClass.getNotchName());
+                        }
+                        return super.visitField(access, name, descriptor, signature, value);
+                    }
                 }
+                newName.or(()->currentClassOld != null ?
+                            currentClassOld.getFields().stream().
+                            filter(f -> f.getNotchName().equals(name)).
+                            findAny().map(TsrgField::getSrgName) : Optional.<String>empty()).
+                        or(() -> {
+                            String s ="field_" + newt.nextNameOffset() + "_" + name;
+                            if(verbose)System.out.println("Found new field "+name+" in "+currentClass.getDeobfuscatedName()+", srg: "+s);
+                            return Optional.of(s);
+                        }).
+                        ifPresent(srg -> {
+                            if(verbose)
+                                System.out.println("Renaming field "+name+" in class "+currentClass.getDeobfuscatedName()+" to "+srg);
+                            currentClass.addField(name, srg);
+                        });
                 return super.visitField(access, name, descriptor, signature, value);
             }
 
@@ -118,7 +149,7 @@ public class RenamingVisitor extends ClassVisitor {
                                          map(MethodRep::getSrgName) : Optional.<String>empty()).
                                     or(()->{
                                         String s = "func_"+newt.nextNameOffset()+"_"+name;
-                                        System.out.println("Found new method "+s+sig+" in class "+currentClass.getDeobfuscatedName()+" srg: "+s);
+                                        if(verbose)System.out.println("Found new method "+name+sig+" in class "+currentClass.getDeobfuscatedName()+" srg: "+s);
                                         return Optional.of(s);
                                     })
                         );
@@ -128,12 +159,10 @@ public class RenamingVisitor extends ClassVisitor {
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
                 if(verbose)System.out.println("Visiting method "+name);
                 getMethodName(name, descriptor, access).ifPresent(srg -> {
-                    if(verbose)
-                        System.out.println("Renaming method "+name+descriptor+" in class "+currentClass.getDeobfuscatedName()+" to "+srg);
+                    if (verbose)
+                        System.out.println("Renaming method " + name + descriptor + " in class " + currentClass.getDeobfuscatedName() + " to " + srg);
                     currentClass.addMethod(Parser.parseFunctionTypeStatic(descriptor), name, srg)
                             .supplyMoreInformation((access & Opcodes.ACC_PRIVATE) != 0, (access & Opcodes.ACC_FINAL) != 0, (access & Opcodes.ACC_SYNTHETIC) != 0);
-
-
                 if((access & Opcodes.ACC_BRIDGE) != 0) {
                     n.methods.stream().filter(n -> n.name.equals(name) && n.desc.equals(descriptor) && n.access == access).findAny().ifPresentOrElse(m -> {
                         AbstractInsnNode[] nodes = m.instructions.toArray();
@@ -148,7 +177,8 @@ public class RenamingVisitor extends ClassVisitor {
                         if(!delegated.isPresent()) throw new IllegalStateException("Synthetic bridge does not call a method!");
                         MethodInsnNode min = delegated.get();
                         if(min.name.equals(name) && Parser.parseFunctionTypeStatic(min.desc).arguments().size() == Parser.parseFunctionTypeStatic(descriptor).arguments().size() && min.owner.equals(n.name)){
-                            System.out.println("Found bridge method bridging "+name+descriptor+" to "+name+min.desc+" in class "+currentClass.getDeobfuscatedName());
+                            if(verbose)
+                                System.out.println("Found bridge method bridging "+name+descriptor+" to "+name+min.desc+" in class "+currentClass.getDeobfuscatedName());
                             Set<TsrgMethod> mrs = currentClass.getTSRGMethods().stream().filter(mr -> mr.getNotchName().equals(name) && mr.getNotchianSignature().equals(min.desc)).collect(Collectors.toSet());
                             if(mrs.size() == 0) //the target has not yet been resolved
                                 syntheticBridgeTargetNames.put(name+"@"+min.desc, name);

@@ -1,15 +1,15 @@
 package de.jojomodding.newnamer.tsrg;
 
-import joptsimple.OptionSet;
-
+import de.jojomodding.newnamer.Util;
 import java.io.PrintStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeMap;
 
 public class Tsrg {
 
-    private final Map<String, TsrgClass> classes = new HashMap<>();
+    private final Map<String, TsrgClass> classes = new TreeMap<>(Util::byLengthFirst);
     private int newFieldNum = 0;
 
     public Optional<String> lookupClassName(String notchname) {

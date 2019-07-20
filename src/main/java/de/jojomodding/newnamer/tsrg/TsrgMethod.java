@@ -8,6 +8,7 @@ import java.util.Optional;
 
 public class TsrgMethod implements MethodRep {
     private final String obfName, srgName;
+    private String typeCache = null;
     private final TsrgClass clazz;
     private final FunctionType type;
     private boolean isfinal, isprivate, issynthetic;
@@ -25,7 +26,9 @@ public class TsrgMethod implements MethodRep {
 
     @Override
     public String getNotchianSignature() {
-        return type.format($ -> Optional.empty());
+        if(typeCache == null)
+            typeCache = type.format($ -> Optional.empty());
+        return typeCache;
     }
 
     @Override

@@ -11,7 +11,7 @@ public class ClassType extends Type{
     }
 
     /**
-     * Gets the name in package/subpackage/ClassName; format
+     * Gets the name in Lpackage/subpackage/ClassName; format
      * @return name in aforementioned format
      */
 
