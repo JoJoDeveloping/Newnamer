@@ -18,9 +18,9 @@ public class ClassRenamer extends ClassVisitor {
 
     public ClassRenamer(URLClassLoader cpLoader, Tsrg tsrg) {
         super(Opcodes.ASM6);
-        lookup = new SuperclassMethodLookup(newt, cpLoader);
         this.newt = tsrg.cloneEmpty();
         this.old = tsrg;
+        lookup = new SuperclassMethodLookup(newt, cpLoader);
     }
     @Override
     public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {

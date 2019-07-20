@@ -1,6 +1,5 @@
 package de.jojomodding.newnamer;
 
-import de.jojomodding.newnamer.hierarchy.DependencySorter;
 import de.jojomodding.newnamer.tsrg.Tsrg;
 import de.jojomodding.newnamer.tsrg.parser.Parser;
 import joptsimple.OptionParser;
@@ -82,7 +81,7 @@ public class Newnamer {
 
 
         //Load ASM for to-be-renamed classes
-        List<ClassNode> classes = new DependencySorter(os.valuesOf(file).stream().flatMap(f -> {
+        List<ClassNode> classes = os.valuesOf(file).stream().flatMap(f -> {
             try {
                 JarFile jf = new JarFile(f);
                 return jf.stream().map(k -> Map.entry(k, jf));
@@ -106,7 +105,7 @@ public class Newnamer {
                 }
             }
             return Stream.empty();
-        }).collect(Collectors.toList())).toposort(); //sort it based on is-superclass
+        }).collect(Collectors.toList());
 
         //Rename classes
         classes.forEach(n -> n.accept(ncv));
