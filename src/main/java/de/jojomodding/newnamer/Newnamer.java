@@ -16,6 +16,7 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.stream.Collectors;
@@ -31,6 +32,8 @@ public class Newnamer {
         OptionSpec<File> in = op.acceptsAll(List.of("inmappings", "in", "i"), "The partial mappings for this jar").withRequiredArg().required().ofType(File.class);
         OptionSpec<File> out = op.acceptsAll(List.of("outmappings", "out", "o"), "The resulting mappings, including classes named by this").withRequiredArg().required().ofType(File.class);
         OptionSpecBuilder dumpin = op.acceptsAll(List.of("dumpinput", "z"), "Dumps the input tsrg in new reordered format. useful for diffing input and output");
+        OptionSpec<File> newclasses = op.acceptsAll(List.of("newclasses", "news", "n"), "Write list of all new classes to specified file").withRequiredArg().ofType(File.class);
+        OptionSpec<String> newpackage = op.acceptsAll(List.of("classpackage", "p"), "Package where new classes should go, in package/path format").withRequiredArg();
         OptionSpecBuilder stats = op.acceptsAll(List.of("statistics", "stats"), "Show what changed between in and out srg");
         op.accepts("v", "Be verbose");
         op.acceptsAll(List.of("help", "h", "?"), "Print help").forHelp();
@@ -75,7 +78,7 @@ public class Newnamer {
                 tsrg.writeToStream(stream);
                 System.out.println("Wrote input tsrg to "+inm.getPath()+"_sorted.tsrg");
             }
-        ClassRenamer ncv = new ClassRenamer(cpLoader, tsrg);
+        ClassRenamer ncv = new ClassRenamer(cpLoader, tsrg, os.valueOfOptional(newpackage));
         Util.printVerbose("Read " + ncv.getOldTsrg().getClasses().values().size() + " classes!");
         Util.printVerbose("New names will start at "+(1+ncv.getOldTsrg().getNameOffset()));
 
@@ -121,6 +124,11 @@ public class Newnamer {
         if(os.has(stats)){
             System.out.println("Printing stats:");
             Util.compareTsrg(ncv.getOldTsrg(), ncv.getNewTsrg(), System.out);
+        }
+        if(os.has(newclasses)){
+            PrintStream ps = new PrintStream(os.valueOf(newclasses));
+            ncv.getNewClasses().forEach(ps::println);
+            ps.close();
         }
     }
 

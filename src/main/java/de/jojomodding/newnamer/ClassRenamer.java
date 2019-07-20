@@ -9,19 +9,26 @@ import org.objectweb.asm.tree.*;
 
 import java.net.URLClassLoader;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ClassRenamer extends ClassVisitor {
 
     private Tsrg old, newt;
     private SuperclassMethodLookup lookup;
+    private Function<String, String> newpackage;
+    private Set<String> newClasses = new HashSet<>();
 
-    public ClassRenamer(URLClassLoader cpLoader, Tsrg tsrg) {
+
+    public ClassRenamer(URLClassLoader cpLoader, Tsrg tsrg, Optional<String> s) {
         super(Opcodes.ASM6);
         this.newt = tsrg.cloneEmpty();
         this.old = tsrg;
         lookup = new SuperclassMethodLookup(newt, cpLoader);
+        newpackage = s.map(p -> (Function<String, String>)(s2 -> p+"/"+s2)).orElse(Function.identity());
     }
+
+
     @Override
     public void visit(int version, int access, String name, String signature, String superName, String[] interfaces) {
         Util.printVerbose("Visiting class "+name);
@@ -33,8 +40,10 @@ public class ClassRenamer extends ClassVisitor {
         if(clazz == null){
             if(name.contains("/"))
                 clazz = newt.addClass(name, name);
-            else
-                clazz = newt.addClass(name, "C_"+newt.nextNameOffset()+"_"+name);
+            else{
+                clazz = newt.addClass(name, newpackage.apply("C_"+newt.nextNameOffset()+"_"+name));
+                newClasses.add(clazz.getDeobfuscatedName());
+            }
             Util.printVerbose("Mapping new class "+name+" to "+clazz.getDeobfuscatedName());
         }else newt.addClass(name, clazz.getDeobfuscatedName());
         clazz.supplyMoreInformation("L"+superName+";", (access&Opcodes.ACC_FINAL)!=0, interfaces == null ? Set.of() : Arrays.stream(interfaces).map(s -> "L"+s+";").collect(Collectors.toSet()));
@@ -54,4 +63,7 @@ public class ClassRenamer extends ClassVisitor {
         return newt;
     }
 
+    public Set<String> getNewClasses() {
+        return newClasses;
+    }
 }
