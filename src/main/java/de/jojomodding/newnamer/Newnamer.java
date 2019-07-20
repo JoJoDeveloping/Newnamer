@@ -36,9 +36,15 @@ public class Newnamer {
         op.accepts("v", "Be verbose");
         op.acceptsAll(List.of("help", "h", "?"), "Print help").forHelp();
         OptionSet os = op.parse(args);
+        if(os.has("h")){
+            op.printHelpOn(System.out);
+            return;
+        }
+
+        Util.setVerbosity(os.has("v"));
 
         File inm = in.value(os), outm = out.value(os);
-
+        //Collect classpath
         URL[] urls =
                 Stream.concat(os.valuesOf(cp).stream().map(f -> {
                     try {
@@ -62,6 +68,7 @@ public class Newnamer {
         URLClassLoader cpLoader = new URLClassLoader(urls);
         System.out.println("Set up classpath contains "+urls.length+" jars");
 
+        //Parse TSRG
         System.out.println("Reading tsrg!");
         Tsrg tsrg = new Parser().parse(Files.lines(inm.toPath()));
         if(os.has(dumpin))
@@ -69,11 +76,12 @@ public class Newnamer {
                 tsrg.writeToStream(stream);
                 System.out.println("Wrote input tsrg to "+inm.getPath()+"_sorted.tsrg");
             }
-        RenamingVisitor ncv = new RenamingVisitor(cpLoader, tsrg, os.has("v"));
-        if(ncv.verbose()) {
-            System.out.println("Read " + ncv.getOldTsrg().getClasses().values().size() + " classes!");
-            System.out.println("New names will start at "+(1+ncv.getOldTsrg().getNameOffset()));
-        }
+        ClassRenamer ncv = new ClassRenamer(cpLoader, tsrg);
+        Util.printVerbose("Read " + ncv.getOldTsrg().getClasses().values().size() + " classes!");
+        Util.printVerbose("New names will start at "+(1+ncv.getOldTsrg().getNameOffset()));
+
+
+        //Load ASM for to-be-renamed classes
         List<ClassNode> classes = new DependencySorter(os.valuesOf(file).stream().flatMap(f -> {
             try {
                 JarFile jf = new JarFile(f);
@@ -98,11 +106,19 @@ public class Newnamer {
                 }
             }
             return Stream.empty();
-        }).collect(Collectors.toList())).toposort();
+        }).collect(Collectors.toList())).toposort(); //sort it based on is-superclass
+
+        //Rename classes
         classes.forEach(n -> n.accept(ncv));
-        classes.forEach(n -> n.accept(ncv.roundTwo(n)));
+
+        //Rename members. We do this now because then all superclasses and parameter types have been resolved
+        classes.forEach(n -> n.accept(ncv.memberRenamer(n)));
+
+        //write resulting tsrg
         System.out.println("Writing result to "+outm.getPath());
         ncv.getNewTsrg().writeToStream(new PrintStream(new FileOutputStream(outm)));
+
+        //if wanted, compare to old tsrg
         if(os.has(stats)){
             System.out.println("Printing stats:");
             Util.compareTsrg(ncv.getOldTsrg(), ncv.getNewTsrg(), System.out);

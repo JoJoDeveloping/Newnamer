@@ -1,6 +1,5 @@
 package de.jojomodding.newnamer;
 
-import de.jojomodding.newnamer.hierarchy.rep.MethodRep;
 import de.jojomodding.newnamer.tsrg.Tsrg;
 import de.jojomodding.newnamer.tsrg.TsrgClass;
 import de.jojomodding.newnamer.tsrg.TsrgField;
@@ -71,6 +70,17 @@ public class Util {
                 findAny().map(TsrgField::getSrgName).orElse("not mapped?!")));
         news.forEach(n -> out.println("\tAdded field "+n+" - "+newt.getFields().stream().filter(m -> m.getNotchName().equals(n)).
                 findAny().map(TsrgField::getSrgName).orElse("not mapped?!")));
+    }
+
+    private static boolean verbose;
+
+    public static void setVerbosity(boolean verbosity){
+        Util.verbose = verbosity;
+    }
+
+    public static void printVerbose(String s){
+        if(verbose)
+            System.out.println(s);
     }
 
 }
